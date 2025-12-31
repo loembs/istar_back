@@ -15,6 +15,8 @@ public class ProductStorage {
     private String size;
     private Double price;
 
+    private Boolean available = true;
+
     @ManyToOne
     @JoinColumn(name = "product_id")
     private Product product;

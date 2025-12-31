@@ -18,6 +18,11 @@ public class ProductColor {
     private String code;
     private String image;
 
+    @Column(name = "price_adjustment")
+    private Double priceAdjustment = 0.0;
+
+    private Boolean available = true;
+
     @ManyToOne
     @JoinColumn(name = "product_id")
     private Product product;

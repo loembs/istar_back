@@ -6,13 +6,17 @@ import java.util.ArrayList;
 import java.util.List;
 @Entity
 @Data
+@Table(name = "product_specs")
 public class ProductSpecs {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "spec_key")
     private String specName;
+
+    @Column(name = "spec_value")
     private String specValue;
 
     @ManyToOne

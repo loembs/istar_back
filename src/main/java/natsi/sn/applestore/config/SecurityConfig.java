@@ -30,8 +30,6 @@ public class SecurityConfig {
     private final UserRepository userRepository;
     private final JwtAuthentificationFilter jwtAuthFilter;
 
-    @Autowired(required = false)
-    private OAuth2SuccessHandler oAuth2SuccessHandler;
 
     @Bean
     public UserDetailsService userDetailsService() {
@@ -61,24 +59,26 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
-                .cors(cors -> {}) // Active la configuration CORS depuis WebConfig
+                .cors(cors -> {})
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**", "/health", "/api/products/**", "/api/categories/**",
-                                "/login/oauth2/**", "/oauth2/**").permitAll()
+                        .requestMatchers(
+                                "/api/auth/**",
+                                "/health",
+                                "/api/products/**",
+                                "/api/categories/**"
+                        ).permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                        .requestMatchers("/api/cart/**", "/api/orders/**", "/api/payments/**").authenticated()
+                        .requestMatchers(
+                                "/api/cart/**",
+                                "/api/orders/**",
+                                "/api/payments/**"
+                        ).authenticated()
                         .anyRequest().permitAll()
                 )
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
-        // Configurer OAuth2 seulement si le handler est disponible (OAuth2 configuré)
-        if (oAuth2SuccessHandler != null) {
-            http.oauth2Login(oauth2 -> oauth2
-                    .successHandler(oAuth2SuccessHandler)
-            );
-        }
-
         return http.build();
     }
+
 }
