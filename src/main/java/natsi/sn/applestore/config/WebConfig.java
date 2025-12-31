@@ -16,7 +16,7 @@ import java.util.List;
 public class WebConfig implements WebMvcConfigurer {
 
     @Value("${cors.allowed-origins:http://localhost:5173,http://localhost:3000,http://localhost:8080}")
-    private String[] allowedOrigins;
+    private String allowedOriginsString;
 
     @Value("${cors.allowed-methods:GET,POST,PUT,DELETE,OPTIONS,HEAD,PATCH}")
     private String[] allowedMethods;
@@ -30,10 +30,18 @@ public class WebConfig implements WebMvcConfigurer {
     @Value("${cors.max-age:3600}")
     private long maxAge;
 
+    /**
+     * Parse les origines depuis la chaîne de configuration
+     */
+    private List<String> getAllowedOrigins() {
+        return Arrays.asList(allowedOriginsString.split(","));
+    }
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        List<String> origins = getAllowedOrigins();
         registry.addMapping("/**")
-                .allowedOrigins(allowedOrigins)
+                .allowedOrigins(origins.toArray(new String[0]))
                 .allowedMethods(allowedMethods)
                 .allowedHeaders(allowedHeaders)
                 .allowCredentials(allowCredentials)
@@ -47,7 +55,8 @@ public class WebConfig implements WebMvcConfigurer {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList(allowedOrigins));
+        List<String> origins = getAllowedOrigins();
+        configuration.setAllowedOrigins(origins);
         configuration.setAllowedMethods(Arrays.asList(allowedMethods));
         configuration.setAllowedHeaders(allowedHeaders.equals("*")
                 ? Arrays.asList("*")
