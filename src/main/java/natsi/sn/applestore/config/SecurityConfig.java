@@ -22,6 +22,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
+import natsi.sn.applestore.config.CorsFilter;
+
 
 @Configuration
 @EnableWebSecurity
@@ -32,7 +34,7 @@ public class SecurityConfig {
     private final UserRepository userRepository;
     private final JwtAuthentificationFilter jwtAuthFilter;
     private final CorsConfigurationSource corsConfigurationSource;
-
+    private final CorsFilter corsFilter;
 
     @Bean
     public UserDetailsService userDetailsService() {
@@ -81,6 +83,7 @@ public class SecurityConfig {
                         .anyRequest().permitAll()
                 )
                 .authenticationProvider(authenticationProvider())
+                .addFilterBefore(corsFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

@@ -34,8 +34,12 @@ public class WebConfig implements WebMvcConfigurer {
      * Parse les origines depuis la chaîne de configuration
      */
     private List<String> getAllowedOrigins() {
-        return Arrays.asList(allowedOriginsString.split(","));
+        return Arrays.stream(allowedOriginsString.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
     }
+
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
