@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import natsi.sn.applestore.data.models.User;
 import natsi.sn.applestore.data.repository.UserRepository;
 import natsi.sn.applestore.security.JwtUtils;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
@@ -17,6 +18,12 @@ import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(
+        prefix = "spring.security.oauth2.client.registration.google",
+        name = "client-id",
+        havingValue = "",
+        matchIfMissing = false
+)
 public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
 
     private final UserRepository userRepository;

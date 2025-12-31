@@ -3,6 +3,8 @@ package natsi.sn.applestore.config;
 import lombok.RequiredArgsConstructor;
 import natsi.sn.applestore.data.repository.UserRepository;
 import natsi.sn.applestore.security.JwtAuthentificationFilter;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -27,7 +29,9 @@ public class SecurityConfig {
 
     private final UserRepository userRepository;
     private final JwtAuthentificationFilter jwtAuthFilter;
-    private final OAuth2SuccessHandler oAuth2SuccessHandler;
+
+    @Autowired(required = false)
+    private OAuth2SuccessHandler oAuth2SuccessHandler;
 
     @Bean
     public UserDetailsService userDetailsService() {
@@ -65,11 +69,15 @@ public class SecurityConfig {
                         .requestMatchers("/api/cart/**", "/api/orders/**", "/api/payments/**").authenticated()
                         .anyRequest().permitAll()
                 )
-                .oauth2Login(oauth2 -> oauth2
-                        .successHandler(oAuth2SuccessHandler)
-                )
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+
+        // Configurer OAuth2 seulement si le handler est disponible (OAuth2 configuré)
+        if (oAuth2SuccessHandler != null) {
+            http.oauth2Login(oauth2 -> oauth2
+                    .successHandler(oAuth2SuccessHandler)
+            );
+        }
 
         return http.build();
     }
