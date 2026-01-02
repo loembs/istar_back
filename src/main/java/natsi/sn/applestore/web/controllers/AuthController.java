@@ -362,14 +362,6 @@ public class AuthController {
     // Note: Le callback OAuth2 est géré par SecurityConfig avec un handler inline
     // Spring Security redirige automatiquement vers /login/oauth2/code/google après l'authentification
 
-    @GetMapping("/oauth2/google")
-    public ResponseEntity<?> googleOAuth() {
-        // Spring Security OAuth2 gère automatiquement la redirection
-        return ResponseEntity.ok(AuthResponse.builder()
-                .message("Redirection vers Google OAuth")
-                .build());
-    }
-
     @GetMapping("/oauth2/success")
     public ResponseEntity<?> oauth2Success(Authentication authentication) {
         try {
@@ -405,44 +397,35 @@ public class AuthController {
                             .build());
         }
     }
+
     @GetMapping("/oauth2/google")
-    public void googleOAuth(
+    public void googleOAuthRedirect(
             @RequestParam(required = false) String returnUrl,
             HttpServletRequest request,
-            HttpServletResponse response) throws IOException {
+            HttpServletResponse response
+    ) throws IOException {
 
         String clientId = System.getenv("GOOGLE_CLIENT_ID");
-        if (clientId == null || clientId.isEmpty()) {
-            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Google OAuth not configured");
+        String redirectUri = System.getenv("GOOGLE_REDIRECT_URI");
+
+        if (clientId == null || redirectUri == null) {
+            response.sendError(400, "Google OAuth non configuré");
             return;
         }
 
-        // Construire l'URL de redirection
-        String redirectUri = System.getenv("GOOGLE_REDIRECT_URI");
-        if (redirectUri == null || redirectUri.isEmpty()) {
-            redirectUri = "https://istar-back.onrender.com/api/auth/oauth2/callback";
+        if (returnUrl != null) {
+            request.getSession().setAttribute("oauth_return_url", returnUrl);
         }
 
-        // Stocker returnUrl dans la session
-        if (returnUrl != null && !returnUrl.isEmpty()) {
-            HttpSession session = request.getSession();
-            session.setAttribute("oauth_return_url", returnUrl);
-        }
-
-        // Construire l'URL d'autorisation Google
-        String googleAuthUrl = String.format(
+        String url = String.format(
                 "https://accounts.google.com/o/oauth2/v2/auth?" +
-                        "client_id=%s&" +
-                        "redirect_uri=%s&" +
-                        "response_type=code&" +
-                        "scope=openid%%20profile%%20email&" +
-                        "access_type=offline&" +
-                        "prompt=consent",
+                        "client_id=%s&redirect_uri=%s&response_type=code" +
+                        "&scope=openid%%20email%%20profile",
                 URLEncoder.encode(clientId, StandardCharsets.UTF_8),
                 URLEncoder.encode(redirectUri, StandardCharsets.UTF_8)
         );
 
-        response.sendRedirect(googleAuthUrl);
+        response.sendRedirect(url);
     }
 }
 
