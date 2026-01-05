@@ -1,13 +1,17 @@
 package natsi.sn.applestore.config;
 
+import com.supabase.auth.config.SupabaseAuthProperties;
+import com.supabase.auth.security.SupabaseJwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import natsi.sn.applestore.data.repository.UserRepository;
 import natsi.sn.applestore.security.JwtAuthentificationFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -29,11 +33,13 @@ import org.springframework.web.cors.CorsConfigurationSource;
 @EnableWebSecurity
 @EnableMethodSecurity
 @RequiredArgsConstructor
+@EnableConfigurationProperties(SupabaseAuthProperties.class)
 public class SecurityConfig {
 
     private final UserRepository userRepository;
     private final JwtAuthentificationFilter jwtAuthFilter;
     private final CorsConfigurationSource corsConfigurationSource;
+    private final SupabaseAuthProperties supabaseAuthProperties;
 //    private final CorsFilter corsFilter;
 
     @Bean
@@ -61,7 +67,9 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            @Autowired(required = false) SupabaseJwtAuthenticationFilter supabaseJwtFilter) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource)) // Utilise explicitement le bean CORS
@@ -74,6 +82,8 @@ public class SecurityConfig {
                                 "/api/products/**",
                                 "/api/categories/**"
                         ).permitAll()
+                        // Permettre les webhooks Supabase
+                        .requestMatchers(supabaseAuthProperties.getWebhookUrl() + "/**").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers(
                                 "/api/cart/**",
@@ -84,7 +94,12 @@ public class SecurityConfig {
                 )
                 .authenticationProvider(authenticationProvider())
 //                .addFilterBefore(corsFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                // Ajouter le filtre Supabase avant le filtre JWT local (priorité Supabase)
+                // Si le filtre Supabase est disponible, l'utiliser en premier, sinon utiliser le filtre JWT local
+                .addFilterBefore(
+                        supabaseJwtFilter != null ? supabaseJwtFilter : jwtAuthFilter,
+                        UsernamePasswordAuthenticationFilter.class
+                );
 
         return http.build();
     }
