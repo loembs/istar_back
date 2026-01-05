@@ -1,30 +1,36 @@
 # Étape 1 : Build
 FROM eclipse-temurin:17-jdk AS build
-WORKDIR /app
 
-# Copier les fichiers Maven d'abord (pour le cache des layers)
-COPY pom.xml .
-COPY mvnw .
-COPY .mvn .mvn
-RUN chmod +x mvnw
-
-# Copier et installer le module supabase-auth-module
-# IMPORTANT: Ce Dockerfile nécessite que le contexte soit à la racine du projet
-# Si le contexte est applestore/, utilisez le Dockerfile à la racine à la place
-WORKDIR /tmp
-COPY supabase-auth-module ./supabase-auth-module
+# Copier et installer le module supabase-auth-module D'ABORD
+# IMPORTANT: Le contexte de build doit être à la racine du projet
 WORKDIR /tmp/supabase-auth-module
-# Installer le module dans le repository Maven local du conteneur
+COPY supabase-auth-module/pom.xml ./pom.xml
+COPY supabase-auth-module/mvnw ./mvnw
+COPY supabase-auth-module/.mvn ./.mvn
+COPY supabase-auth-module/src ./src
+
+# Rendre mvnw exécutable et installer le module
 RUN chmod +x mvnw 2>/dev/null || true
 RUN ./mvnw clean install -DskipTests || mvn clean install -DskipTests
 
-# Retourner au répertoire de l'application
+# Maintenant builder l'application applestore
 WORKDIR /app
 
-# Copier le code source
-COPY src ./src
+# Copier les fichiers Maven d'abord (pour le cache des layers)
+COPY applestore/pom.xml ./pom.xml
+COPY applestore/mvnw ./mvnw
+COPY applestore/.mvn ./.mvn
 
-# Build l'application (le module est maintenant disponible)
+# Rendre mvnw exécutable
+RUN chmod +x mvnw
+
+# Télécharger les dépendances (cache layer)
+RUN ./mvnw dependency:go-offline -B || true
+
+# Copier le code source
+COPY applestore/src ./src
+
+# Build l'application (le module supabase-auth-module est maintenant disponible)
 RUN ./mvnw clean package -DskipTests
 
 # Étape 2 : Image de production (plus légère avec JRE)
