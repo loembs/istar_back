@@ -8,10 +8,23 @@ COPY mvnw .
 COPY .mvn .mvn
 RUN chmod +x mvnw
 
+# Copier et installer le module supabase-auth-module
+# IMPORTANT: Ce Dockerfile nécessite que le contexte soit à la racine du projet
+# Si le contexte est applestore/, utilisez le Dockerfile à la racine à la place
+WORKDIR /tmp
+COPY supabase-auth-module ./supabase-auth-module
+WORKDIR /tmp/supabase-auth-module
+# Installer le module dans le repository Maven local du conteneur
+RUN chmod +x mvnw 2>/dev/null || true
+RUN ./mvnw clean install -DskipTests || mvn clean install -DskipTests
+
+# Retourner au répertoire de l'application
+WORKDIR /app
+
 # Copier le code source
 COPY src ./src
 
-# Build l'application
+# Build l'application (le module est maintenant disponible)
 RUN ./mvnw clean package -DskipTests
 
 # Étape 2 : Image de production (plus légère avec JRE)
