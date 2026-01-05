@@ -1,23 +1,18 @@
-FROM eclipse-temurin:17-jdk AS build
+FROM maven:3.8.5-eclipse-temurin-17 AS build
 
 # Build supabase-auth-module d'abord
 WORKDIR /tmp/supabase-auth-module
 COPY supabase-auth-module/pom.xml ./pom.xml
-COPY supabase-auth-module/mvnw ./mvnw
-COPY supabase-auth-module/.mvn ./.mvn
 COPY supabase-auth-module/src ./src
 
-RUN chmod +x mvnw 2>/dev/null || true
-RUN ./mvnw clean install -DskipTests
+RUN mvn clean install -DskipTests
 
 # Build applestore
 WORKDIR /app
-COPY pom.xml mvnw ./
-COPY .mvn ./.mvn
+COPY pom.xml ./
 COPY src ./src
 
-RUN chmod +x mvnw
-RUN ./mvnw clean package -DskipTests
+RUN mvn clean package -DskipTests
 
 # Production
 FROM eclipse-temurin:17-jre-jammy
