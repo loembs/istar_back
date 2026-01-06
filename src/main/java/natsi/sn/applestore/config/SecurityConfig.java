@@ -93,12 +93,11 @@ public class SecurityConfig {
                         .anyRequest().permitAll()
                 )
                 .authenticationProvider(authenticationProvider())
-//                .addFilterBefore(corsFilter, UsernamePasswordAuthenticationFilter.class)
-                // Ajouter le filtre Supabase avant le filtre JWT local (priorité Supabase)
-                // Si le filtre Supabase est disponible, l'utiliser en premier, sinon utiliser le filtre JWT local
-                .addFilterBefore(
-                        supabaseJwtFilter != null ? supabaseJwtFilter : jwtAuthFilter,
-                        UsernamePasswordAuthenticationFilter.class
+//                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                // Ajouter le filtre Supabase après jwtAuthFilter si disponible (pour supporter les tokens Supabase aussi)
+                .addFilterAfter(
+                        supabaseJwtFilter != null ? supabaseJwtFilter : null,
+                        JwtAuthentificationFilter.class
                 );
 
         return http.build();
