@@ -92,13 +92,8 @@ public class SecurityConfig {
                         ).authenticated()
                         .anyRequest().permitAll()
                 )
-                .authenticationProvider(authenticationProvider())
-//                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
-                // Ajouter le filtre Supabase après jwtAuthFilter si disponible (pour supporter les tokens Supabase aussi)
-                .addFilterAfter(
-                        supabaseJwtFilter != null ? supabaseJwtFilter : null,
-                        JwtAuthentificationFilter.class
-                );
+                .authenticationProvider(authenticationProvider());
+//              .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
