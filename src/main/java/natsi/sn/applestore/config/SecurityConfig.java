@@ -6,12 +6,10 @@ import lombok.RequiredArgsConstructor;
 import natsi.sn.applestore.data.repository.UserRepository;
 import natsi.sn.applestore.security.JwtAuthentificationFilter;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -19,6 +17,7 @@ import org.springframework.security.config.annotation.authentication.configurati
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -26,8 +25,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
-//import natsi.sn.applestore.config.CorsFilter;
-
 
 @Configuration
 @EnableWebSecurity
@@ -40,7 +37,6 @@ public class SecurityConfig {
     private final JwtAuthentificationFilter jwtAuthFilter;
     private final CorsConfigurationSource corsConfigurationSource;
     private final SupabaseAuthProperties supabaseAuthProperties;
-//    private final CorsFilter corsFilter;
 
     @Bean
     public UserDetailsService userDetailsService() {
@@ -72,30 +68,47 @@ public class SecurityConfig {
             @Autowired(required = false) SupabaseJwtAuthenticationFilter supabaseJwtFilter) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
-                .cors(cors -> cors.configurationSource(corsConfigurationSource)) // Utilise explicitement le bean CORS
+                .cors(cors -> cors.configurationSource(corsConfigurationSource))
+
+                // ✅ IMPORTANT: Politique de session STATELESS pour JWT
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                )
 
                 .authorizeHttpRequests(auth -> auth
+                        // Permettre les requêtes OPTIONS (préflight CORS)
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // Routes publiques
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/health",
                                 "/api/products/**",
                                 "/api/categories/**"
                         ).permitAll()
-                        // Permettre les webhooks Supabase
+
+                        // Webhooks Supabase
                         .requestMatchers(supabaseAuthProperties.getWebhookUrl() + "/**").permitAll()
+
+                        // Routes admin (nécessite ROLE_ADMIN)
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
+
+                        // ✅ Routes protégées (nécessite authentification JWT)
                         .requestMatchers(
                                 "/api/cart/**",
                                 "/api/orders/**",
                                 "/api/payments/**"
                         ).authenticated()
+
+                        // Toutes les autres requêtes
                         .anyRequest().permitAll()
                 )
-                .authenticationProvider(authenticationProvider());
-//              .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+
+                .authenticationProvider(authenticationProvider())
+
+                // ✅ CRITIQUE: Décommenter cette ligne pour activer le filtre JWT
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
-
 }
