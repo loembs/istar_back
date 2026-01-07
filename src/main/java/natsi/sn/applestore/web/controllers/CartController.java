@@ -184,12 +184,20 @@ public class CartController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        Cart cart = item.getCart();
+        // Récupérer l'ID du panier avant la suppression
+        Long cartId = item.getCart().getId();
+
+        // Supprimer l'article
         cartItemRepository.delete(item);
+
+        // Recharger le panier avec ses items pour recalculer correctement les totaux
+        Cart cart = cartRepository.findByUserIdWithItems(user.getId())
+                .orElseThrow(() -> new RuntimeException("Panier non trouvé"));
+
         cart.calculateTotals();
         cartRepository.save(cart);
 
-        log.info("✅ Article supprimé");
+        log.info("✅ Article supprimé. Nouveau total: {} F CFA", cart.getTotalPrice());
         return ResponseEntity.ok().build();
     }
 
