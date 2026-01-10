@@ -20,10 +20,13 @@ import natsi.sn.applestore.web.dto.response.CartResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -36,6 +39,7 @@ public class CartController {
     private final ProductRepository productRepository;
 
     @GetMapping
+    @Transactional(readOnly = true)
     public ResponseEntity<CartResponse> getCart(Authentication authentication) {
         log.info("🛒 GET /api/cart");
 
@@ -54,10 +58,13 @@ public class CartController {
         Cart cart = cartRepository.findByUserIdWithItems(user.getId()).orElse(null);
 
         if (cart == null) {
-            log.info("📦 Création d'un nouveau panier");
-            cart = new Cart();
-            cart.setUser(user);
-            cart = cartRepository.save(cart);
+            log.info("📦 Panier vide");
+            CartResponse emptyCart = CartResponse.builder()
+                    .items(Collections.emptyList())
+                    .total(0.0)
+                    .itemCount(0)
+                    .build();
+            return ResponseEntity.ok(emptyCart);
         }
 
         CartResponse response = convertToDto(cart);
@@ -66,176 +73,199 @@ public class CartController {
     }
 
     @PostMapping("/items")
+    @Transactional
     public ResponseEntity<?> addToCart(
             @RequestBody AddToCartRequest request,
             Authentication authentication) {
 
-        log.info("🛒 POST /api/cart/items - productId: {}, quantity: {}",
-                request.getProductId(), request.getQuantity());
+        try {
+            log.info("🛒 POST /api/cart/items - productId: {}, quantity: {}",
+                    request.getProductId(), request.getQuantity());
 
-        if (authentication == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        User user = (User) authentication.getPrincipal();
-        Product product = productRepository.findById(Integer.parseInt(request.getProductId()))
-                .orElseThrow(() -> new RuntimeException("Produit non trouvé"));
-
-        log.info("📦 Produit: {} - Prix: {} F CFA", product.getName(), product.getPrice());
-
-        Cart cart = cartRepository.findByUserIdWithItems(user.getId())
-                .orElseGet(() -> {
-                    Cart newCart = new Cart();
-                    newCart.setUser(user);
-                    return cartRepository.save(newCart);
-                });
-
-        CartItem existingItem = cartItemRepository.findByCartIdAndProductId(cart.getId(), request.getProductId())
-                .orElse(null);
-
-        CartItem item;
-        if (existingItem != null) {
-            log.info("📝 Mise à jour quantité: {} -> {}",
-                    existingItem.getQuantity(),
-                    existingItem.getQuantity() + request.getQuantity());
-            existingItem.setQuantity(existingItem.getQuantity() + request.getQuantity());
-            item = cartItemRepository.save(existingItem);
-        } else {
-            log.info("➕ Nouvel article");
-            CartItem newItem = new CartItem();
-            newItem.setCart(cart);
-            newItem.setProductId(request.getProductId());
-            if (request.getColorId() != null) {
-                // TODO: Récupérer ProductColor depuis repository
+            if (authentication == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
             }
-            if (request.getStorageId() != null) {
-                // TODO: Récupérer ProductStorage depuis repository
+
+            User user = (User) authentication.getPrincipal();
+
+            // Validation de la quantité
+            if (request.getQuantity() <= 0) {
+                return ResponseEntity.badRequest().body("La quantité doit être positive");
             }
-            newItem.setQuantity(request.getQuantity());
-            newItem.setUnitPrice(product.getPrice());
-            item = cartItemRepository.save(newItem);
+
+            Product product = productRepository.findById(Integer.parseInt(request.getProductId()))
+                    .orElseThrow(() -> new RuntimeException("Produit non trouvé"));
+
+            log.info("📦 Produit: {} - Prix: {} F CFA", product.getName(), product.getPrice());
+
+            Cart cart = cartRepository.findByUserIdWithItems(user.getId())
+                    .orElseGet(() -> {
+                        Cart newCart = new Cart();
+                        newCart.setUser(user);
+                        return cartRepository.save(newCart);
+                    });
+
+            CartItem existingItem = cart.getItems().stream()
+                    .filter(item -> item.getProductId().equals(request.getProductId()))
+                    .findFirst()
+                    .orElse(null);
+
+            CartItem item;
+            if (existingItem != null) {
+                log.info("📝 Mise à jour quantité: {} -> {}",
+                        existingItem.getQuantity(),
+                        existingItem.getQuantity() + request.getQuantity());
+                existingItem.setQuantity(existingItem.getQuantity() + request.getQuantity());
+                item = existingItem;
+            } else {
+                log.info("➕ Nouvel article");
+                CartItem newItem = new CartItem();
+                newItem.setCart(cart);
+                newItem.setProductId(request.getProductId());
+                newItem.setQuantity(request.getQuantity());
+                newItem.setUnitPrice(product.getPrice());
+                cart.getItems().add(newItem);
+                item = newItem;
+            }
+
+            cart.calculateTotals();
+            cartRepository.save(cart);
+
+            log.info("✅ Article ajouté. Total: {} F CFA", cart.getTotalPrice());
+            return ResponseEntity.ok(convertToDto(item, product));
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de l'ajout au panier", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Erreur lors de l'ajout au panier: " + e.getMessage());
         }
-
-        cart.calculateTotals();
-        cartRepository.save(cart);
-
-        log.info("✅ Article ajouté. Total: {} F CFA", cart.getTotalPrice());
-        return ResponseEntity.ok(convertToDto(item, product));
     }
 
     @PutMapping("/items/{itemId}")
+    @Transactional
     public ResponseEntity<?> updateCartItem(
             @PathVariable Long itemId,
             @RequestBody UpdateCartItemRequest request,
             Authentication authentication) {
 
-        log.info("📝 PUT /api/cart/items/{} - quantity: {}", itemId, request.getQuantity());
+        try {
+            log.info("📝 PUT /api/cart/items/{} - quantity: {}", itemId, request.getQuantity());
 
-        if (authentication == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
+            if (authentication == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
 
-        User user = (User) authentication.getPrincipal();
-        CartItem item = cartItemRepository.findById(itemId)
-                .orElseThrow(() -> new RuntimeException("Article non trouvé"));
+            User user = (User) authentication.getPrincipal();
+            CartItem item = cartItemRepository.findById(itemId)
+                    .orElseThrow(() -> new RuntimeException("Article non trouvé"));
 
-        if (!item.getCart().getUser().getId().equals(user.getId())) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
+            if (!item.getCart().getUser().getId().equals(user.getId())) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
 
-        if (request.getQuantity() <= 0) {
-            log.info("🗑️ Suppression de l'article");
+            Cart cart = item.getCart();
 
-            // Supprimer l'article
-            cartItemRepository.delete(item);
-
-            // Recharger le panier avec ses items pour recalculer correctement les totaux
-            Cart cart = cartRepository.findByUserIdWithItems(user.getId())
-                    .orElseThrow(() -> new RuntimeException("Panier non trouvé"));
+            if (request.getQuantity() <= 0) {
+                log.info("🗑️ Suppression de l'article");
+                cart.getItems().remove(item);
+                cartItemRepository.delete(item);
+            } else {
+                item.setQuantity(request.getQuantity());
+            }
 
             cart.calculateTotals();
             cartRepository.save(cart);
-            return ResponseEntity.ok().build();
+
+            log.info("✅ Article mis à jour");
+
+            if (request.getQuantity() <= 0) {
+                return ResponseEntity.ok().build();
+            }
+
+            Product product = productRepository.findById(Integer.parseInt(item.getProductId())).orElse(null);
+            return ResponseEntity.ok(convertToDto(item, product));
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la mise à jour", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Erreur lors de la mise à jour: " + e.getMessage());
         }
-
-        item.setQuantity(request.getQuantity());
-        item = cartItemRepository.save(item);
-
-        Cart cart = item.getCart();
-        cart.calculateTotals();
-        cartRepository.save(cart);
-
-        log.info("✅ Article mis à jour");
-
-        Product product = productRepository.findById(Integer.parseInt(item.getProductId())).orElse(null);
-        return ResponseEntity.ok(convertToDto(item, product));
     }
 
     @DeleteMapping("/items/{itemId}")
-    public ResponseEntity<Void> removeFromCart(
+    @Transactional
+    public ResponseEntity<?> removeFromCart(
             @PathVariable Long itemId,
             Authentication authentication) {
 
-        log.info("🗑️ DELETE /api/cart/items/{}", itemId);
+        try {
+            log.info("🗑️ DELETE /api/cart/items/{}", itemId);
 
-        if (authentication == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            if (authentication == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
+            User user = (User) authentication.getPrincipal();
+            CartItem item = cartItemRepository.findById(itemId)
+                    .orElseThrow(() -> new RuntimeException("Article non trouvé"));
+
+            if (!item.getCart().getUser().getId().equals(user.getId())) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+
+            Cart cart = item.getCart();
+
+            // Supprimer l'article
+            cart.getItems().remove(item);
+            cartItemRepository.delete(item);
+
+            // Recalculer et sauvegarder
+            cart.calculateTotals();
+            cartRepository.save(cart);
+
+            log.info("✅ Article supprimé. Nouveau total: {} F CFA", cart.getTotalPrice());
+            return ResponseEntity.ok().build();
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la suppression: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Erreur lors de la suppression: " + e.getMessage()));
         }
-
-        User user = (User) authentication.getPrincipal();
-        CartItem item = cartItemRepository.findById(itemId)
-                .orElseThrow(() -> new RuntimeException("Article non trouvé"));
-
-        if (!item.getCart().getUser().getId().equals(user.getId())) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
-
-        // Supprimer l'article
-        cartItemRepository.delete(item);
-
-        // Recharger le panier avec ses items pour recalculer correctement les totaux
-        Cart cart = cartRepository.findByUserIdWithItems(user.getId())
-                .orElseThrow(() -> new RuntimeException("Panier non trouvé"));
-
-        cart.calculateTotals();
-        cartRepository.save(cart);
-
-        log.info("✅ Article supprimé. Nouveau total: {} F CFA", cart.getTotalPrice());
-        return ResponseEntity.ok().build();
     }
 
     @DeleteMapping
+    @Transactional
     public ResponseEntity<Void> clearCart(Authentication authentication) {
-        log.info("🗑️ DELETE /api/cart (vider)");
+        try {
+            log.info("🗑️ DELETE /api/cart (vider)");
 
-        if (authentication == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            if (authentication == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
+            User user = (User) authentication.getPrincipal();
+            Cart cart = cartRepository.findByUserIdWithItems(user.getId()).orElse(null);
+
+            if (cart != null && !cart.getItems().isEmpty()) {
+                log.info("🗑️ Suppression de {} articles", cart.getItems().size());
+                cart.getItems().clear();
+                cart.calculateTotals();
+                cartRepository.save(cart);
+                log.info("✅ Panier vidé");
+            } else {
+                log.info("ℹ️ Panier déjà vide");
+            }
+
+            return ResponseEntity.ok().build();
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors du vidage du panier", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
-
-        User user = (User) authentication.getPrincipal();
-        Cart cart = cartRepository.findByUserIdWithItems(user.getId()).orElse(null);
-
-        if (cart != null && !cart.getItems().isEmpty()) {
-            log.info("🗑️ Suppression de {} articles", cart.getItems().size());
-
-            // Supprimer tous les items du panier (utilise orphanRemoval configuré dans l'entité Cart)
-            cart.getItems().clear();
-
-            // Recalculer les totaux (sera 0)
-            cart.calculateTotals();
-
-            // Sauvegarder le panier (les items seront automatiquement supprimés grâce à orphanRemoval)
-            cartRepository.save(cart);
-
-            log.info("✅ Panier vidé. Total: {} F CFA", cart.getTotalPrice());
-        } else {
-            log.info("ℹ️ Panier déjà vide");
-        }
-
-        return ResponseEntity.ok().build();
     }
 
     @GetMapping("/count")
+    @Transactional(readOnly = true)
     public ResponseEntity<CartCountResponse> getCartItemCount(Authentication authentication) {
         if (authentication == null) {
             return ResponseEntity.ok(new CartCountResponse(0));
@@ -246,11 +276,33 @@ public class CartController {
         return ResponseEntity.ok(new CartCountResponse(count != null ? count : 0));
     }
 
-    // ✅ Convertir Cart en DTO avec les détails des produits
+    // ✅ Convertir Cart en DTO avec chargement optimisé des produits
     private CartResponse convertToDto(Cart cart) {
+        if (cart.getItems().isEmpty()) {
+            return CartResponse.builder()
+                    .id(cart.getId())
+                    .userId(cart.getUser() != null ? cart.getUser().getId() : null)
+                    .items(Collections.emptyList())
+                    .total(0.0)
+                    .itemCount(0)
+                    .createdAt(cart.getCreatedAt())
+                    .updatedAt(cart.getUpdatedAt())
+                    .build();
+        }
+
+        // ✅ Charger tous les produits en une seule requête (évite N+1)
+        List<Integer> productIds = cart.getItems().stream()
+                .map(item -> Integer.parseInt(item.getProductId()))
+                .distinct()
+                .toList();
+
+        Map<Integer, Product> productsMap = productRepository.findAllById(productIds)
+                .stream()
+                .collect(Collectors.toMap(Product::getId, p -> p));
+
         List<CartItemResponse> itemDtos = cart.getItems().stream()
                 .map(item -> {
-                    Product product = productRepository.findById(Integer.parseInt(item.getProductId())).orElse(null);
+                    Product product = productsMap.get(Integer.parseInt(item.getProductId()));
                     return convertToDto(item, product);
                 })
                 .toList();
@@ -280,7 +332,6 @@ public class CartController {
                 .addedAt(item.getAddedAt())
                 .updatedAt(item.getUpdatedAt());
 
-        // ✅ Ajouter le ProductDto complet
         if (product != null) {
             ProductDto productDto = ProductDto.builder()
                     .id(String.valueOf(product.getId()))
@@ -292,14 +343,9 @@ public class CartController {
                     .isNew(product.isNew())
                     .isBestseller(product.isBestseller())
                     .build();
-
             builder.product(productDto);
-            log.debug("📦 Produit enrichi: {}", product.getName());
-        } else {
-            log.warn("⚠️ Produit non trouvé: {}", item.getProductId());
         }
 
-        // ✅ Ajouter color et storage si disponibles
         if (item.getColor() != null) {
             ProductColorDto colorDto = ProductColorDto.builder()
                     .id(item.getColor().getId())
@@ -335,5 +381,3 @@ public class CartController {
         }
     }
 }
-
-
