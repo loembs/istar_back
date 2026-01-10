@@ -145,8 +145,14 @@ public class CartController {
 
         if (request.getQuantity() <= 0) {
             log.info("🗑️ Suppression de l'article");
+
+            // Supprimer l'article
             cartItemRepository.delete(item);
-            Cart cart = item.getCart();
+
+            // Recharger le panier avec ses items pour recalculer correctement les totaux
+            Cart cart = cartRepository.findByUserIdWithItems(user.getId())
+                    .orElseThrow(() -> new RuntimeException("Panier non trouvé"));
+
             cart.calculateTotals();
             cartRepository.save(cart);
             return ResponseEntity.ok().build();
@@ -184,9 +190,6 @@ public class CartController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        // Récupérer l'ID du panier avant la suppression
-        Long cartId = item.getCart().getId();
-
         // Supprimer l'article
         cartItemRepository.delete(item);
 
@@ -212,14 +215,23 @@ public class CartController {
         User user = (User) authentication.getPrincipal();
         Cart cart = cartRepository.findByUserIdWithItems(user.getId()).orElse(null);
 
-        if (cart != null) {
+        if (cart != null && !cart.getItems().isEmpty()) {
             log.info("🗑️ Suppression de {} articles", cart.getItems().size());
-            cartItemRepository.deleteByCartId(cart.getId());
+
+            // Supprimer tous les items du panier (utilise orphanRemoval configuré dans l'entité Cart)
+            cart.getItems().clear();
+
+            // Recalculer les totaux (sera 0)
             cart.calculateTotals();
+
+            // Sauvegarder le panier (les items seront automatiquement supprimés grâce à orphanRemoval)
             cartRepository.save(cart);
+
+            log.info("✅ Panier vidé. Total: {} F CFA", cart.getTotalPrice());
+        } else {
+            log.info("ℹ️ Panier déjà vide");
         }
 
-        log.info("✅ Panier vidé");
         return ResponseEntity.ok().build();
     }
 
