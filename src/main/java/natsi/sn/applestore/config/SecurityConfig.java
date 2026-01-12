@@ -89,6 +89,11 @@ public class SecurityConfig {
 
                         // Webhooks Supabase
                         .requestMatchers(supabaseAuthProperties.getWebhookUrl() + "/**").permitAll()
+                        // Webhooks PayTech (doivent être publics car appelés par PayTech)
+                        // Note: /requestPayment doit être accessible par le SDK JS (peut nécessiter une authentification)
+                        .requestMatchers("/api/payments/paymentIpn").permitAll()
+                        .requestMatchers("/api/payments/paymentSuccess").permitAll()
+                        .requestMatchers("/api/payments/paymentCanceled").permitAll()
 
                         // Routes admin (nécessite ROLE_ADMIN)
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
